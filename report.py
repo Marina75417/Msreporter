@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # MARINA KHAN'S FACEBOOK REPORT TOOL (LEGAL)
-import os
 import requests
 import json
 from datetime import datetime
@@ -9,7 +8,7 @@ class MarinaKhanFacebookReporter:
     def __init__(self):
         self.APP_ID = "your-app-id"  # Register at developers.facebook.com
         self.APP_SECRET = "your-app-secret"
-        self.ACCESS_TOKEN = f"{self.APP_ID}|{self.APP_SECRET}
+        self.ACCESS_TOKEN = f"{self.APP_ID}|{self.APP_SECRET}"
         self.report_header = """
         ███╗   ███╗ █████╗ ██████╗ ██╗███╗   ██╗ █████╗      ██╗  ██╗██╗  ██╗ █████╗ ███╗   ██╗
         ████╗ ████║██╔══██╗██╔══██╗██║████╗  ██║██╔══██╗     ██║  ██║██║  ██║██╔══██╗████╗  ██║
