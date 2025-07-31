@@ -1,103 +1,122 @@
 #!/usr/bin/env python3
-# MARINA KHAN'S FACEBOOK SWISS ARMY TOOL (100% LEGAL)
-import requests
-import json
-from datetime import datetime
+# MARINA KHAN'S POWER COMMAND TOOL - ALL-IN-ONE SOLUTION
+import os
 import sys
-from getpass import getpass
+import json
+import requests
+import argparse
+from datetime import datetime
+from pathlib import Path
 
-class FBTool:
+class MarinaCommand:
+    VERSION = "1.0"
+    BANNER = f"""
+    ╔══════════════════════════════════════════╗
+    ║  MARINA KHAN'S POWER TOOL v{VERSION}      ║
+    ║  • File Operations                       ║
+    ║  • Web Utilities                         ║
+    ║  • Data Processing                       ║
+    ╚══════════════════════════════════════════╝
+    """
+
     def __init__(self):
-        self.API_VERSION = "v19.0"
-        self.BASE_URL = f"https://graph.facebook.com/{self.API_VERSION}"
-        self.BANNER = f"""
-        ╔════════════════════════════════════════════╗
-        ║    MARINA KHAN'S FACEBOOK TOOL - {datetime.now().year}   ║
-        ║                                            ║
-        ║  Features:                                 ║
-        ║  • Page Analytics                          ║
-        ║  • Post Scheduler (Basic)                  ║
-        ║  • Ad Performance Check                    ║
-        ║                                            ║
-        ║  Uses Official Facebook API Only           ║
-        ╚════════════════════════════════════════════╝
-        """
+        self.parser = argparse.ArgumentParser(
+            description=f"MARINA KHAN'S COMMAND TOOL v{self.VERSION}",
+            formatter_class=argparse.RawTextHelpFormatter
+        )
+        self._setup_commands()
 
-    def get_token(self):
-        """Securely get Facebook access token"""
-        token = getpass("Enter Facebook Access Token (hidden): ")
-        return token.strip()
+    def _setup_commands(self):
+        subparsers = self.parser.add_subparsers(dest='command', required=True)
 
-    def page_analytics(self, page_id, token):
-        """Get public page metrics"""
-        try:
-            url = f"{self.BASE_URL}/{page_id}?fields=name,fan_count,posts.limit(3){{message,created_time,reactions}}&access_token={token}"
-            data = requests.get(url).json()
-            
-            report = {
-                "generated_at": datetime.now().isoformat(),
-                "tool": "MARINA KHAN OFFICIAL",
-                "page_info": {
-                    "name": data.get("name"),
-                    "followers": data.get("fan_count"),
-                    "recent_posts": [
-                        {
-                            "time": p.get("created_time"),
-                            "content": p.get("message", "")[:50] + "...",
-                            "reactions": p.get("reactions", {}).get("summary", {}).get("total_count", 0)
-                        } for p in data.get("posts", {}).get("data", [])[:3]
-                    ]
+        # File operations
+        file_parser = subparsers.add_parser('file', help='File operations')
+        file_parser.add_argument('action', choices=['search', 'stats', 'clean'], 
+                               help='search: Find files\nstats: Show file info\nclean: Remove temp files')
+        file_parser.add_argument('path', help='Directory path')
+
+        # Web tools
+        web_parser = subparsers.add_parser('web', help='Web utilities')
+        web_parser.add_argument('action', choices=['ping', 'fetch', 'scan'], 
+                              help='ping: Check URL\nfetch: Download content\nscan: Check links')
+        web_parser.add_argument('url', help='Target URL')
+
+        # Data tools
+        data_parser = subparsers.add_parser('data', help='Data processing')
+        data_parser.add_argument('action', choices=['csv2json', 'analyze', 'encrypt'],
+                               help='csv2json: Convert files\nanalyze: Process data\nencrypt: Secure files')
+        data_parser.add_argument('input', help='Input file')
+
+    def handle_file(self, args):
+        if args.action == "search":
+            return self._file_search(args.path)
+        elif args.action == "stats":
+            return self._file_stats(args.path)
+        else:
+            return self._clean_files(args.path)
+
+    def _file_search(self, path):
+        results = []
+        for root, _, files in os.walk(path):
+            for file in files:
+                results.append({
+                    "path": os.path.join(root, file),
+                    "size": os.path.getsize(os.path.join(root, file))
+                })
+        return {"action": "file_search", "results": results}
+
+    def _file_stats(self, path):
+        path = Path(path)
+        if path.is_file():
+            return {
+                "filename": path.name,
+                "size": path.stat().st_size,
+                "modified": datetime.fromtimestamp(path.stat().st_mtime).isoformat()
+            }
+        return {"error": "Not a file"}
+
+    def handle_web(self, args):
+        if args.action == "ping":
+            try:
+                r = requests.head(args.url, timeout=5)
+                return {
+                    "url": args.url,
+                    "status": r.status_code,
+                    "server": r.headers.get('Server')
                 }
-            }
-            return report
-        except Exception as e:
-            return {"error": str(e)}
+            except Exception as e:
+                return {"error": str(e)}
+        elif args.action == "fetch":
+            try:
+                r = requests.get(args.url)
+                return {
+                    "content": r.text[:200] + "...",
+                    "length": len(r.text)
+                }
+            except Exception as e:
+                return {"error": str(e)}
 
-    def quick_post(self, token, page_id, message):
-        """Make a simple post (requires publish permissions)"""
-        try:
-            url = f"{self.BASE_URL}/{page_id}/feed"
-            params = {
-                "message": message,
-                "access_token": token
-            }
-            response = requests.post(url, params=params)
-            return response.json()
-        except Exception as e:
-            return {"error": str(e)}
+    def handle_data(self, args):
+        if args.action == "csv2json":
+            # Simplified conversion example
+            return {"action": "csv2json", "status": "Not implemented yet"}
+        elif args.action == "analyze":
+            return {"action": "analyze", "status": "Processing data"}
 
     def run(self):
         print(self.BANNER)
+        args = self.parser.parse_args()
         
-        if len(sys.argv) < 2:
-            print("Usage:")
-            print(f"  {sys.argv[0]} analytics <page_id>")
-            print(f"  {sys.argv[0]} post <page_id> \"Your message\"")
-            sys.exit(1)
+        result = {}
+        if args.command == "file":
+            result = self.handle_file(args)
+        elif args.command == "web":
+            result = self.handle_web(args)
+        elif args.command == "data":
+            result = self.handle_data(args)
 
-        command = sys.argv[1]
-        token = self.get_token()
-
-        if command == "analytics":
-            if len(sys.argv) < 3:
-                print("Error: Missing page_id")
-                sys.exit(1)
-            page_id = sys.argv[2]
-            result = self.page_analytics(page_id, token)
-            print(json.dumps(result, indent=2))
-            
-        elif command == "post":
-            if len(sys.argv) < 4:
-                print("Error: Missing page_id or message")
-                sys.exit(1)
-            page_id = sys.argv[2]
-            message = sys.argv[3]
-            result = self.quick_post(token, page_id, message)
-            print(json.dumps(result, indent=2))
-            
-        else:
-            print("Invalid command")
+        print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
-    tool = FBTool()
+    tool = MarinaCommand()
     tool.run()
