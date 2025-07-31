@@ -1,122 +1,130 @@
 #!/usr/bin/env python3
-# MARINA KHAN'S POWER COMMAND TOOL - ALL-IN-ONE SOLUTION
+# MARINA KHAN'S FILE CRYPT - AES-256 ENCRYPTION/DECRYPTION
 import os
 import sys
-import json
-import requests
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import scrypt
+from Crypto.Random import get_random_bytes
 import argparse
-from datetime import datetime
-from pathlib import Path
+import base64
 
-class MarinaCommand:
-    VERSION = "1.0"
-    BANNER = f"""
+class MarinaCrypt:
+    HEADER = """
     ╔══════════════════════════════════════════╗
-    ║  MARINA KHAN'S POWER TOOL v{VERSION}      ║
-    ║  • File Operations                       ║
-    ║  • Web Utilities                         ║
-    ║  • Data Processing                       ║
+    ║    MARINA KHAN'S FILE CRYPT v1.0        ║
+    ║    • AES-256 Encryption                 ║
+    ║    • Secure Key Derivation              ║
+    ║    • Tamper Detection                   ║
     ╚══════════════════════════════════════════╝
     """
+    
+    SALT_SIZE = 16
+    NONCE_SIZE = 12  # GCM recommended nonce size
+    TAG_SIZE = 16    # GCM authentication tag
+    SCRYPT_PARAMS = {
+        "N": 2**14,  # CPU/memory cost
+        "r": 8,      # Block size
+        "p": 1       # Parallelization
+    }
 
     def __init__(self):
-        self.parser = argparse.ArgumentParser(
-            description=f"MARINA KHAN'S COMMAND TOOL v{self.VERSION}",
-            formatter_class=argparse.RawTextHelpFormatter
-        )
-        self._setup_commands()
+        print(self.HEADER)
+        self._setup_args()
 
-    def _setup_commands(self):
+    def _setup_args(self):
+        self.parser = argparse.ArgumentParser(
+            description="MARINA KHAN'S FILE ENCRYPTION TOOL",
+            epilog="Example: ./marina_crypt.py encrypt secret.txt -o encrypted.marina"
+        )
         subparsers = self.parser.add_subparsers(dest='command', required=True)
 
-        # File operations
-        file_parser = subparsers.add_parser('file', help='File operations')
-        file_parser.add_argument('action', choices=['search', 'stats', 'clean'], 
-                               help='search: Find files\nstats: Show file info\nclean: Remove temp files')
-        file_parser.add_argument('path', help='Directory path')
+        # Encrypt command
+        enc_parser = subparsers.add_parser('encrypt', help='Encrypt a file')
+        enc_parser.add_argument('input', help='File to encrypt')
+        enc_parser.add_argument('-o', '--output', help='Output file')
+        enc_parser.add_argument('-k', '--key', help='Custom encryption key (optional)')
 
-        # Web tools
-        web_parser = subparsers.add_parser('web', help='Web utilities')
-        web_parser.add_argument('action', choices=['ping', 'fetch', 'scan'], 
-                              help='ping: Check URL\nfetch: Download content\nscan: Check links')
-        web_parser.add_argument('url', help='Target URL')
+        # Decrypt command
+        dec_parser = subparsers.add_parser('decrypt', help='Decrypt a file')
+        dec_parser.add_argument('input', help='File to decrypt')
+        dec_parser.add_argument('-o', '--output', help='Output file')
 
-        # Data tools
-        data_parser = subparsers.add_parser('data', help='Data processing')
-        data_parser.add_argument('action', choices=['csv2json', 'analyze', 'encrypt'],
-                               help='csv2json: Convert files\nanalyze: Process data\nencrypt: Secure files')
-        data_parser.add_argument('input', help='Input file')
+    def _derive_key(self, password, salt):
+        """Generate 256-bit key using scrypt KDF"""
+        return scrypt(
+            password.encode(), 
+            salt, 
+            key_len=32, 
+            N=self.SCRYPT_PARAMS["N"],
+            r=self.SCRYPT_PARAMS["r"],
+            p=self.SCRYPT_PARAMS["p"]
+        )
 
-    def handle_file(self, args):
-        if args.action == "search":
-            return self._file_search(args.path)
-        elif args.action == "stats":
-            return self._file_stats(args.path)
-        else:
-            return self._clean_files(args.path)
+    def encrypt_file(self, input_path, output_path=None, key=None):
+        """Encrypt file with AES-256-GCM"""
+        if not output_path:
+            output_path = input_path + ".marina"
 
-    def _file_search(self, path):
-        results = []
-        for root, _, files in os.walk(path):
-            for file in files:
-                results.append({
-                    "path": os.path.join(root, file),
-                    "size": os.path.getsize(os.path.join(root, file))
-                })
-        return {"action": "file_search", "results": results}
+        salt = get_random_bytes(self.SALT_SIZE)
+        nonce = get_random_bytes(self.NONCE_SIZE)
 
-    def _file_stats(self, path):
-        path = Path(path)
-        if path.is_file():
-            return {
-                "filename": path.name,
-                "size": path.stat().st_size,
-                "modified": datetime.fromtimestamp(path.stat().st_mtime).isoformat()
-            }
-        return {"error": "Not a file"}
+        # Get encryption key
+        if not key:
+            key = input("Enter encryption key: ")
+        enc_key = self._derive_key(key, salt)
 
-    def handle_web(self, args):
-        if args.action == "ping":
-            try:
-                r = requests.head(args.url, timeout=5)
-                return {
-                    "url": args.url,
-                    "status": r.status_code,
-                    "server": r.headers.get('Server')
-                }
-            except Exception as e:
-                return {"error": str(e)}
-        elif args.action == "fetch":
-            try:
-                r = requests.get(args.url)
-                return {
-                    "content": r.text[:200] + "...",
-                    "length": len(r.text)
-                }
-            except Exception as e:
-                return {"error": str(e)}
+        cipher = AES.new(enc_key, AES.MODE_GCM, nonce=nonce)
+        
+        with open(input_path, 'rb') as f_in:
+            plaintext = f_in.read()
+            ciphertext, tag = cipher.encrypt_and_digest(plaintext)
 
-    def handle_data(self, args):
-        if args.action == "csv2json":
-            # Simplified conversion example
-            return {"action": "csv2json", "status": "Not implemented yet"}
-        elif args.action == "analyze":
-            return {"action": "analyze", "status": "Processing data"}
+        with open(output_path, 'wb') as f_out:
+            [f_out.write(x) for x in (salt, nonce, tag, ciphertext)]
+
+        print(f"✅ ENCRYPTED: {input_path} → {output_path}")
+        print(f"🔑 Key: {key if len(key) < 20 else key[:10]+'...'+key[-5:]}")
+        return True
+
+    def decrypt_file(self, input_path, output_path=None, key=None):
+        """Decrypt file with AES-256-GCM"""
+        if not output_path:
+            if input_path.endswith('.marina'):
+                output_path = input_path[:-7]
+            else:
+                output_path = input_path + ".decrypted"
+
+        with open(input_path, 'rb') as f_in:
+            salt = f_in.read(self.SALT_SIZE)
+            nonce = f_in.read(self.NONCE_SIZE)
+            tag = f_in.read(self.TAG_SIZE)
+            ciphertext = f_in.read()
+
+        if not key:
+            key = input("Enter decryption key: ")
+        dec_key = self._derive_key(key, salt)
+
+        try:
+            cipher = AES.new(dec_key, AES.MODE_GCM, nonce=nonce)
+            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+            
+            with open(output_path, 'wb') as f_out:
+                f_out.write(plaintext)
+
+            print(f"✅ DECRYPTED: {input_path} → {output_path}")
+            return True
+        except ValueError as e:
+            print(f"❌ DECRYPTION FAILED: {str(e)}")
+            return False
 
     def run(self):
-        print(self.BANNER)
         args = self.parser.parse_args()
-        
-        result = {}
-        if args.command == "file":
-            result = self.handle_file(args)
-        elif args.command == "web":
-            result = self.handle_web(args)
-        elif args.command == "data":
-            result = self.handle_data(args)
 
-        print(json.dumps(result, indent=2))
+        if args.command == 'encrypt':
+            self.encrypt_file(args.input, args.output, args.key)
+        elif args.command == 'decrypt':
+            self.decrypt_file(args.input, args.output, args.key)
 
 if __name__ == "__main__":
-    tool = MarinaCommand()
+    tool = MarinaCrypt()
     tool.run()
