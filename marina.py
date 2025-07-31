@@ -1,130 +1,89 @@
 #!/usr/bin/env python3
-# MARINA KHAN'S FILE CRYPT - AES-256 ENCRYPTION/DECRYPTION
+# MARINA KHAN'S PERSONAL MESSENGER GPT BOT
+from flask import Flask, request, jsonify
+import requests
 import os
-import sys
-from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import scrypt
-from Crypto.Random import get_random_bytes
-import argparse
-import base64
+import openai  # pip install openai
 
-class MarinaCrypt:
-    HEADER = """
-    ╔══════════════════════════════════════════╗
-    ║    MARINA KHAN'S FILE CRYPT v1.0        ║
-    ║    • AES-256 Encryption                 ║
-    ║    • Secure Key Derivation              ║
-    ║    • Tamper Detection                   ║
-    ╚══════════════════════════════════════════╝
-    """
-    
-    SALT_SIZE = 16
-    NONCE_SIZE = 12  # GCM recommended nonce size
-    TAG_SIZE = 16    # GCM authentication tag
-    SCRYPT_PARAMS = {
-        "N": 2**14,  # CPU/memory cost
-        "r": 8,      # Block size
-        "p": 1       # Parallelization
-    }
+app = Flask(__name__)
 
+# ===== CONFIGURATION ===== 
+YOUR_NAME = "MARINA KHAN"  # Customize with your name
+FB_PAGE_TOKEN = "YOUR_FB_PAGE_TOKEN"  # From Facebook Developer
+FB_VERIFY_TOKEN = "MARINA_VERIFY_123"  # Your secret token
+OPENAI_KEY = "sk-your-openai-key"  # Optional GPT-4/3.5
+
+# ===== BOT CORE =====
+class MarinaGPTBot:
     def __init__(self):
-        print(self.HEADER)
-        self._setup_args()
+        self.api_url = f"https://graph.facebook.com/v19.0/me/messages?access_token={FB_PAGE_TOKEN}"
+        self.personality = f"""
+        You are {YOUR_NAME}'s personal AI assistant. 
+        Respond helpfully with a friendly tone.
+        When asked about your creator, say "{YOUR_NAME} built me with OpenAI technology".
+        """
 
-    def _setup_args(self):
-        self.parser = argparse.ArgumentParser(
-            description="MARINA KHAN'S FILE ENCRYPTION TOOL",
-            epilog="Example: ./marina_crypt.py encrypt secret.txt -o encrypted.marina"
-        )
-        subparsers = self.parser.add_subparsers(dest='command', required=True)
+    def handle_message(self, sender_id, message):
+        """Process messages with GPT or custom logic"""
+        response = self._generate_response(message)
+        self._send_message(sender_id, response)
 
-        # Encrypt command
-        enc_parser = subparsers.add_parser('encrypt', help='Encrypt a file')
-        enc_parser.add_argument('input', help='File to encrypt')
-        enc_parser.add_argument('-o', '--output', help='Output file')
-        enc_parser.add_argument('-k', '--key', help='Custom encryption key (optional)')
-
-        # Decrypt command
-        dec_parser = subparsers.add_parser('decrypt', help='Decrypt a file')
-        dec_parser.add_argument('input', help='File to decrypt')
-        dec_parser.add_argument('-o', '--output', help='Output file')
-
-    def _derive_key(self, password, salt):
-        """Generate 256-bit key using scrypt KDF"""
-        return scrypt(
-            password.encode(), 
-            salt, 
-            key_len=32, 
-            N=self.SCRYPT_PARAMS["N"],
-            r=self.SCRYPT_PARAMS["r"],
-            p=self.SCRYPT_PARAMS["p"]
-        )
-
-    def encrypt_file(self, input_path, output_path=None, key=None):
-        """Encrypt file with AES-256-GCM"""
-        if not output_path:
-            output_path = input_path + ".marina"
-
-        salt = get_random_bytes(self.SALT_SIZE)
-        nonce = get_random_bytes(self.NONCE_SIZE)
-
-        # Get encryption key
-        if not key:
-            key = input("Enter encryption key: ")
-        enc_key = self._derive_key(key, salt)
-
-        cipher = AES.new(enc_key, AES.MODE_GCM, nonce=nonce)
+    def _generate_response(self, message):
+        """Generate AI response or use predefined answers"""
+        lower_msg = message.lower()
         
-        with open(input_path, 'rb') as f_in:
-            plaintext = f_in.read()
-            ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+        # Custom responses
+        if any(x in lower_msg for x in ["hi","hello","hey"]):
+            return f"Hello! I'm {YOUR_NAME}'s AI assistant. How can I help?"
+        elif "your name" in lower_msg:
+            return f"I'm {YOUR_NAME}'s Messenger Bot!"
+        
+        # GPT-4/3.5 fallback (if API key set)
+        if OPENAI_KEY and len(message) > 3:
+            openai.api_key = OPENAI_KEY
+            try:
+                completion = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "system", "content": self.personality},
+                             {"role": "user", "content": message}]
+                )
+                return completion.choices[0].message.content
+            except:
+                return "I'm having trouble connecting to AI services."
+        
+        return f"Thanks for your message! This is {YOUR_NAME}'s bot."
 
-        with open(output_path, 'wb') as f_out:
-            [f_out.write(x) for x in (salt, nonce, tag, ciphertext)]
+    def _send_message(self, recipient_id, text):
+        """Send response via Messenger API"""
+        requests.post(self.api_url, json={
+            "recipient": {"id": recipient_id},
+            "message": {"text": text}
+        })
 
-        print(f"✅ ENCRYPTED: {input_path} → {output_path}")
-        print(f"🔑 Key: {key if len(key) < 20 else key[:10]+'...'+key[-5:]}")
-        return True
+# ===== FLASK ROUTES =====
+@app.route('/webhook', methods=['GET'])
+def verify():
+    """Facebook verification"""
+    if request.args.get('hub.verify_token') == FB_VERIFY_TOKEN:
+        return request.args.get('hub.challenge')
+    return "Verification failed"
 
-    def decrypt_file(self, input_path, output_path=None, key=None):
-        """Decrypt file with AES-256-GCM"""
-        if not output_path:
-            if input_path.endswith('.marina'):
-                output_path = input_path[:-7]
-            else:
-                output_path = input_path + ".decrypted"
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Process incoming messages"""
+    data = request.json
+    if data['object'] == 'page':
+        for entry in data['entry']:
+            for event in entry['messaging']:
+                if 'message' in event:
+                    bot.handle_message(
+                        event['sender']['id'],
+                        event['message']['text']
+                    )
+    return jsonify(status=200)
 
-        with open(input_path, 'rb') as f_in:
-            salt = f_in.read(self.SALT_SIZE)
-            nonce = f_in.read(self.NONCE_SIZE)
-            tag = f_in.read(self.TAG_SIZE)
-            ciphertext = f_in.read()
-
-        if not key:
-            key = input("Enter decryption key: ")
-        dec_key = self._derive_key(key, salt)
-
-        try:
-            cipher = AES.new(dec_key, AES.MODE_GCM, nonce=nonce)
-            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
-            
-            with open(output_path, 'wb') as f_out:
-                f_out.write(plaintext)
-
-            print(f"✅ DECRYPTED: {input_path} → {output_path}")
-            return True
-        except ValueError as e:
-            print(f"❌ DECRYPTION FAILED: {str(e)}")
-            return False
-
-    def run(self):
-        args = self.parser.parse_args()
-
-        if args.command == 'encrypt':
-            self.encrypt_file(args.input, args.output, args.key)
-        elif args.command == 'decrypt':
-            self.decrypt_file(args.input, args.output, args.key)
-
-if __name__ == "__main__":
-    tool = MarinaCrypt()
-    tool.run()
+# ===== MAIN =====
+if __name__ == '__main__':
+    bot = MarinaGPTBot()
+    print(f"🌟 {YOUR_NAME}'s Messenger Bot Activated!")
+    app.run(port=5000)
